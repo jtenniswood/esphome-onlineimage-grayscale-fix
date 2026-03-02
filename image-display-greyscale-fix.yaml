@@ -51,7 +51,7 @@ external_components:
     components: [gsl3680]
   - source: github://jtenniswood/image-experiment@main
     refresh: 0s
-    components: [runtime_image]
+    components: [online_image]
 
 esp_ldo:
   - channel: 3
