@@ -50,6 +50,7 @@ external_components:
   - source: github://kvj/esphome@jd9365_gsl3680
     components: [gsl3680]
   - source: github://jtenniswood/image-experiment@main
+    refresh: 0s
     components: [runtime_image]
 
 esp_ldo:
