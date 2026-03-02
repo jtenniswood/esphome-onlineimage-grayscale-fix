@@ -96,7 +96,12 @@ int HOT JpegDecoder::decode(uint8_t *buffer, size_t size) {
   ESP_LOGD(TAG, "Image size: %d x %d, bpp: %d", this->jpeg_.getWidth(), this->jpeg_.getHeight(), this->jpeg_.getBpp());
 
   this->jpeg_.setUserPointer(this);
-  this->jpeg_.setPixelType(RGB8888);
+  // JPEGDEC's JPEGPutMCUGray() only outputs RGB565 and ignores the RGB8888 pixel type,
+  // so only request RGB8888 for color images (bpp > 8). Greyscale (bpp == 8) stays at
+  // the default RGB565_LITTLE_ENDIAN, which the iBpp==16 branch in draw_callback handles.
+  if (this->jpeg_.getBpp() > 8) {
+    this->jpeg_.setPixelType(RGB8888);
+  }
   if (!this->set_size(this->jpeg_.getWidth(), this->jpeg_.getHeight())) {
     return DECODE_ERROR_OUT_OF_MEMORY;
   }
