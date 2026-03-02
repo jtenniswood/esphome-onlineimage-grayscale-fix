@@ -24,8 +24,6 @@ namespace esphome::runtime_image {
 static int draw_callback(JPEGDRAW *jpeg) {
   ImageDecoder *decoder = (ImageDecoder *) jpeg->pUser;
 
-  // Some very big images take too long to decode, so feed the watchdog on each callback
-  // to avoid crashing if the executing task has a watchdog enabled.
 #ifdef USE_ESP_IDF
   if (esp_task_wdt_status(nullptr) == ESP_OK) {
 #endif
@@ -44,8 +42,11 @@ static int draw_callback(JPEGDRAW *jpeg) {
   for (size_t y = 0; y < height; y++) {
     for (size_t x = 0; x < width; x++) {
       Color color;
-      if (jpeg->iBpp == 16) {
-        // Greyscale JPEGs: JPEGDEC outputs RGB565 even when RGB8888 requested
+      if (jpeg->iBpp == 8) {
+        auto *bytes = reinterpret_cast<uint8_t *>(jpeg->pPixels);
+        uint8_t gray = bytes[position++];
+        color = Color(gray, gray, gray);
+      } else if (jpeg->iBpp == 16) {
         uint16_t rgb565 = jpeg->pPixels[position++];
         uint8_t r5 = (rgb565 >> 11) & 0x1F;
         uint8_t g6 = (rgb565 >> 5) & 0x3F;
@@ -93,13 +94,13 @@ int HOT JpegDecoder::decode(uint8_t *buffer, size_t size) {
     ESP_LOGE(TAG, "Progressive JPEG images not supported");
     return DECODE_ERROR_INVALID_TYPE;
   }
-  ESP_LOGD(TAG, "Image size: %d x %d, bpp: %d", this->jpeg_.getWidth(), this->jpeg_.getHeight(), this->jpeg_.getBpp());
+  int bpp = this->jpeg_.getBpp();
+  ESP_LOGW(TAG, "PATCHED decoder: %d x %d, bpp: %d", this->jpeg_.getWidth(), this->jpeg_.getHeight(), bpp);
 
   this->jpeg_.setUserPointer(this);
-  // JPEGDEC's JPEGPutMCUGray() only outputs RGB565 and ignores the RGB8888 pixel type,
-  // so only request RGB8888 for color images (bpp > 8). Greyscale (bpp == 8) stays at
-  // the default RGB565_LITTLE_ENDIAN, which the iBpp==16 branch in draw_callback handles.
-  if (this->jpeg_.getBpp() > 8) {
+  if (bpp <= 8) {
+    this->jpeg_.setPixelType(EIGHT_BIT_GRAYSCALE);
+  } else {
     this->jpeg_.setPixelType(RGB8888);
   }
   if (!this->set_size(this->jpeg_.getWidth(), this->jpeg_.getHeight())) {
