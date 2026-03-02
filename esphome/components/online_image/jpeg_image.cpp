@@ -21,12 +21,9 @@ namespace online_image {
 static int draw_callback(JPEGDRAW *jpeg) {
   ImageDecoder *decoder = (ImageDecoder *) jpeg->pUser;
 
+  // Some very big images take too long to decode, so feed the watchdog on each callback
+  // to avoid crashing.
   App.feed_wdt();
-  if (!decoder) {
-    ESP_LOGE(TAG, "Decoder pointer is null!");
-    return 0;
-  }
-
   size_t position = 0;
   size_t height = static_cast<size_t>(jpeg->iHeight);
   size_t width = static_cast<size_t>(jpeg->iWidth);
@@ -41,6 +38,11 @@ static int draw_callback(JPEGDRAW *jpeg) {
         auto rg = decode_value(jpeg->pPixels[position++]);
         auto ba = decode_value(jpeg->pPixels[position++]);
         color = Color(rg[1], rg[0], ba[1], ba[0]);
+      }
+
+      if (!decoder) {
+        ESP_LOGE(TAG, "Decoder pointer is null!");
+        return 0;
       }
       decoder->draw(jpeg->x + x, jpeg->y + y, 1, 1, color);
     }
@@ -77,7 +79,7 @@ int HOT JpegDecoder::decode(uint8_t *buffer, size_t size) {
     return DECODE_ERROR_INVALID_TYPE;
   }
   int bpp = this->jpeg_.getBpp();
-  ESP_LOGW(TAG, "PATCHED decoder: %d x %d, bpp: %d", this->jpeg_.getWidth(), this->jpeg_.getHeight(), bpp);
+  ESP_LOGD(TAG, "Image size: %d x %d, bpp: %d", this->jpeg_.getWidth(), this->jpeg_.getHeight(), bpp);
 
   this->jpeg_.setUserPointer(this);
   if (bpp <= 8) {
