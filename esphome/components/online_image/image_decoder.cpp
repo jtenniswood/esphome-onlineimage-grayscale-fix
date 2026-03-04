@@ -25,6 +25,49 @@ void ImageDecoder::draw(int x, int y, int w, int h, const Color &color) {
   }
 }
 
+void ImageDecoder::draw_rgb565_block(int x, int y, int w, int h, const uint8_t *data) {
+  int bpp_bytes = this->image_->get_bpp() / 8;
+
+  if (this->x_scale_ == 1.0 && this->y_scale_ == 1.0 && bpp_bytes == 2) {
+    for (int row = 0; row < h; row++) {
+      int dy = y + row;
+      if (dy < 0 || dy >= this->image_->buffer_height_)
+        continue;
+      int start_x = std::max(0, x);
+      int end_x = std::min(x + w, this->image_->buffer_width_);
+      if (start_x >= end_x)
+        continue;
+      int copy_w = end_x - start_x;
+      int src_offset = (row * w + (start_x - x)) * 2;
+      int dst_pos = this->image_->get_position_(start_x, dy);
+      memcpy(this->image_->buffer_ + dst_pos, data + src_offset, copy_w * 2);
+    }
+    return;
+  }
+
+  for (int row = 0; row < h; row++) {
+    for (int col = 0; col < w; col++) {
+      int src_x = x + col;
+      int src_y = y + row;
+      int src_offset = (row * w + col) * 2;
+
+      auto target_w = std::min(this->image_->buffer_width_,
+                               static_cast<int>(std::ceil((src_x + 1) * this->x_scale_)));
+      auto target_h = std::min(this->image_->buffer_height_,
+                               static_cast<int>(std::ceil((src_y + 1) * this->y_scale_)));
+      for (int dy = static_cast<int>(src_y * this->y_scale_); dy < target_h; dy++) {
+        for (int dx = static_cast<int>(src_x * this->x_scale_); dx < target_w; dx++) {
+          int dst_pos = this->image_->get_position_(dx, dy);
+          memcpy(this->image_->buffer_ + dst_pos, data + src_offset, 2);
+          if (bpp_bytes > 2) {
+            this->image_->buffer_[dst_pos + 2] = 0xFF;
+          }
+        }
+      }
+    }
+  }
+}
+
 DownloadBuffer::DownloadBuffer(size_t size) : size_(size) {
   this->buffer_ = this->allocator_.allocate(size);
   this->reset();

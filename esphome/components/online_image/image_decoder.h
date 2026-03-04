@@ -73,6 +73,19 @@ class ImageDecoder {
    */
   void draw(int x, int y, int w, int h, const Color &color);
 
+  /**
+   * @brief Write a block of pre-formatted RGB565 pixel data directly into the image buffer.
+   * Uses memcpy for 1:1 scale (no per-pixel conversion overhead).
+   * Falls back to per-pixel copy when scaling is required.
+   *
+   * @param x Block x position in source image coordinates.
+   * @param y Block y position in source image coordinates.
+   * @param w Block width in pixels.
+   * @param h Block height in pixels.
+   * @param data Pointer to packed RGB565 pixel data (2 bytes per pixel, row-major).
+   */
+  void draw_rgb565_block(int x, int y, int w, int h, const uint8_t *data);
+
   bool is_finished() const { return this->decoded_bytes_ == this->download_size_; }
 
  protected:

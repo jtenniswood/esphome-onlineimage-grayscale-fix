@@ -133,7 +133,7 @@ ONLINE_IMAGE_SCHEMA = (
             ),
             cv.Required(CONF_FORMAT): cv.one_of(*IMAGE_FORMATS, upper=True),
             cv.Optional(CONF_PLACEHOLDER): cv.use_id(Image_),
-            cv.Optional(CONF_BUFFER_SIZE, default=65536): cv.int_range(256, 65536),
+            cv.Optional(CONF_BUFFER_SIZE, default=65536): cv.int_range(256, 524288),
             cv.Optional(CONF_ON_DOWNLOAD_FINISHED): automation.validate_automation(
                 {
                     cv.GenerateID(CONF_TRIGGER_ID): cv.declare_id(

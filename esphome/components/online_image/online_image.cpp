@@ -20,6 +20,13 @@ static const char *const IF_MODIFIED_SINCE_HEADER_NAME = "if-modified-since";
 #include "png_image.h"
 #endif
 
+#ifdef USE_ESP_IDF
+#include "soc/soc_caps.h"
+#if SOC_JPEG_CODEC_SUPPORTED
+#include "jpeg_image_hw.h"
+#endif
+#endif
+
 namespace esphome {
 namespace online_image {
 
@@ -199,8 +206,18 @@ void OnlineImage::update() {
 #endif  // USE_ONLINE_IMAGE_BMP_SUPPORT
 #ifdef USE_ONLINE_IMAGE_JPEG_SUPPORT
   if (this->format_ == ImageFormat::JPEG) {
+#if defined(SOC_JPEG_CODEC_SUPPORTED) && SOC_JPEG_CODEC_SUPPORTED
+    if (this->type_ == ImageType::IMAGE_TYPE_RGB565) {
+      ESP_LOGD(TAG, "Allocating hardware JPEG decoder");
+      this->decoder_ = esphome::make_unique<HwJpegDecoder>(this);
+    } else {
+      ESP_LOGD(TAG, "Allocating software JPEG decoder (non-RGB565 image type)");
+      this->decoder_ = esphome::make_unique<JpegDecoder>(this);
+    }
+#else
     ESP_LOGD(TAG, "Allocating JPEG decoder");
     this->decoder_ = esphome::make_unique<JpegDecoder>(this);
+#endif
     this->enable_loop();
   }
 #endif  // USE_ONLINE_IMAGE_JPEG_SUPPORT

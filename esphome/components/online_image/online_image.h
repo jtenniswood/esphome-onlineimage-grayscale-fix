@@ -96,6 +96,11 @@ class OnlineImage : public PollingComponent,
   void add_on_finished_callback(std::function<void(bool)> &&callback);
   void add_on_error_callback(std::function<void()> &&callback);
 
+  bool is_big_endian() const { return this->is_big_endian_; }
+  int get_fixed_width() const { return this->fixed_width_; }
+  int get_fixed_height() const { return this->fixed_height_; }
+  image::ImageType image_type() const { return this->type_; }
+
  protected:
   bool validate_url_(const std::string &url);
 
@@ -200,6 +205,7 @@ class OnlineImage : public PollingComponent,
 
   friend bool ImageDecoder::set_size(int width, int height);
   friend void ImageDecoder::draw(int x, int y, int w, int h, const Color &color);
+  friend void ImageDecoder::draw_rgb565_block(int x, int y, int w, int h, const uint8_t *data);
 };
 
 template<typename... Ts> class OnlineImageSetUrlAction : public Action<Ts...> {
