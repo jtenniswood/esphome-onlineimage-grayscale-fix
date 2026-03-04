@@ -1,49 +1,61 @@
-# ESPHome Online Image — Grayscale JPEG Fix
+# ESPHome Online Image — Grayscale Fix & JPEG Performance
 
-This repository provides a patched `online_image` component for [ESPHome](https://esphome.io/) that fixes decoding of grayscale JPEG images.
+This repository provides a patched `online_image` component for [ESPHome](https://esphome.io/) that fixes decoding of grayscale JPEG images and adds significant performance optimisations for JPEG loading.
 
-## The Problem
+## Changes from Upstream
 
-The upstream `online_image` component unconditionally sets the JPEGDEC pixel type to `RGB8888`, which assumes all JPEG images contain colour data. When a grayscale JPEG (8-bit, single channel) is decoded with this setting, the pixel data is misinterpreted — each single-byte grayscale value is read as part of a 4-byte RGBA tuple, producing corrupted output (wrong colours, shifted pixels, or crashes).
+All changes are within the `online_image` component. The upstream base is the ESPHome 2026.2.1 `release` branch.
 
-## The Fix
+### 1. Grayscale JPEG fix
 
-The fix is contained entirely in **`jpeg_image.cpp`** — all other files are identical to the upstream ESPHome `release` branch.
+The upstream component unconditionally sets the JPEGDEC pixel type to `RGB8888`, which assumes all JPEG images contain colour data. A grayscale JPEG (8-bit, single channel) decoded with this setting produces corrupted output because each single-byte grayscale value is read as part of a 4-byte RGBA tuple.
 
-Two changes were made:
+**Modified file:** `jpeg_image.cpp`
 
-### 1. Pixel type selection in `JpegDecoder::decode()`
+- The decoder now checks bits-per-pixel before choosing a pixel type — `EIGHT_BIT_GRAYSCALE` for `bpp <= 8`, otherwise `RGB565` or `RGB8888` depending on the target image type.
+- The draw callback branches on `jpeg->iBpp` to correctly read 8-bit grayscale pixels as single bytes.
 
-The decoder now checks the image's bits-per-pixel before choosing a pixel type:
+### 2. Direct RGB565 output
 
-```cpp
-int bpp = this->jpeg_.getBpp();
-if (bpp <= 8) {
-  this->jpeg_.setPixelType(EIGHT_BIT_GRAYSCALE);
-} else {
-  this->jpeg_.setPixelType(RGB8888);
-}
-```
+When the target image type is `RGB565`, the software decoder now requests `RGB565_LITTLE_ENDIAN` or `RGB565_BIG_ENDIAN` directly from JPEGDEC instead of decoding to `RGB8888` and converting per-pixel with `color_to_565()`.
 
-**Upstream behaviour:** Always calls `this->jpeg_.setPixelType(RGB8888)` regardless of the source image format.
+**Modified file:** `jpeg_image.cpp`
 
-### 2. Grayscale pixel handling in `draw_callback()`
+### 3. Bulk RGB565 block copy
 
-The draw callback now branches on `jpeg->iBpp` to correctly read pixel data for each format:
+A new `draw_rgb565_block()` method on `ImageDecoder` writes decoded MCU rows directly into the image buffer using `memcpy` at 1:1 scale. When the image is being scaled, it falls back to per-pixel copy.
 
-```cpp
-if (jpeg->iBpp == 8) {
-  auto *bytes = reinterpret_cast<uint8_t *>(jpeg->pPixels);
-  uint8_t gray = bytes[position++];
-  color = Color(gray, gray, gray);
-} else {
-  auto rg = decode_value(jpeg->pPixels[position++]);
-  auto ba = decode_value(jpeg->pPixels[position++]);
-  color = Color(rg[1], rg[0], ba[1], ba[0]);
-}
-```
+**Modified files:** `image_decoder.h`, `image_decoder.cpp`
 
-**Upstream behaviour:** Always reads two 16-bit values per pixel (`decode_value` x2), which is correct for RGB8888 but reads out of bounds for 8-bit grayscale data.
+### 4. JPEGDEC built-in downscaling
+
+When `resize` dimensions are set and the source image is significantly larger than the target, the decoder uses JPEGDEC's built-in downscaling (`JPEG_SCALE_HALF`, `JPEG_SCALE_QUARTER`, `JPEG_SCALE_EIGHTH`) to reduce decode computation before the image reaches the draw callback.
+
+**Modified file:** `jpeg_image.cpp`
+
+### 5. Aspect-ratio-preserving resize
+
+When fixed `resize` dimensions are configured, the image is now fitted within the bounding box using a uniform scale factor rather than being stretched to fill the exact dimensions.
+
+**Modified file:** `online_image.cpp`
+
+### 6. ESP32-P4 hardware JPEG decoder
+
+On chips with a hardware JPEG codec (currently the ESP32-P4), a new `HwJpegDecoder` class uses the ESP-IDF `esp_driver_jpeg` API to decode directly to RGB565 in hardware — bypassing the software JPEGDEC library entirely. The hardware path is selected automatically when the target image type is `RGB565`.
+
+**New files:** `jpeg_image_hw.h`, `jpeg_image_hw.cpp`
+
+### 7. Larger download buffer limit
+
+The `buffer_size` configuration upper limit has been raised from 64 KB to 512 KB for devices with large PSRAM, allowing full-image buffering of bigger JPEGs.
+
+**Modified file:** `__init__.py`
+
+### 8. Watchdog feed in draw callback
+
+The JPEG draw callback now calls `App.feed_wdt()` on each MCU block to prevent watchdog resets when decoding large images.
+
+**Modified file:** `jpeg_image.cpp`
 
 ## Usage
 
@@ -69,8 +81,8 @@ online_image:
       - logger.log: "Image downloaded"
 ```
 
-Both colour and grayscale JPEGs will decode correctly.
+Both colour and grayscale JPEGs will decode correctly. On ESP32-P4, hardware JPEG decoding is used automatically for RGB565 images.
 
 ## Compatibility
 
-This component is based on the ESPHome `release` branch and maintains full API compatibility. It can be used as a drop-in replacement — no configuration changes are needed beyond adding the `external_components` entry.
+This component is based on the ESPHome 2026.2.1 `release` branch and maintains full API compatibility. It can be used as a drop-in replacement — no configuration changes are needed beyond adding the `external_components` entry.
